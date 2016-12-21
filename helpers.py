@@ -72,8 +72,7 @@ def hough_lines(img, rho, theta, threshold, min_line_len, max_line_gap, single_l
     Returns an image with hough lines drawn.
     """
     lines = cv2.HoughLinesP(img, rho, theta, threshold, np.array([]), minLineLength=min_line_len, maxLineGap=max_line_gap)
-    if single_line:
-        lines = reduce_lines(lines, vertices)
+    lines = reduce_lines(lines, vertices, single_line)
     line_img = np.zeros((*img.shape, 3), dtype=np.uint8)
     draw_lines(line_img, lines)
     return line_img
@@ -94,21 +93,17 @@ def weighted_img(img, initial_img, α=0.8, β=1., λ=0.):
     """
     return cv2.addWeighted(initial_img, α, img, β, λ)
 
+def reduce_lines(lines, vertices, single_line):
 
-def reduce_lines(lines, vertices):
-    
+    if not single_line: # comment out during debug
+        return lines 
+
     ybl = vertices[0][0][1]
     ytl = vertices[0][1][1]
     xtl = vertices[0][1][0]
     xtr = vertices[0][2][0]
     xmiddle = (xtr + xtl)/2
      
-    def printTuple(t): # for debug
-        x1, y1, x2, y2, m, b, x, y = t[0][0], t[0][1], t[0][2], t[0][3], t[1], t[2], t[3], t[4]
-        print(str(x1) + ',' + str(y1) + ',' + str(x2) + ',' + str(y2)
-            + ',' + '{: 5.2f}'.format(m) + ',' + '{: 5.1f}'.format(b)
-            + ',' + str(x) + ',' + str(y))
-        
     def getXY(p,y):
         return([int(round((y-p[1])/p[0])),y])
 
@@ -118,7 +113,6 @@ def reduce_lines(lines, vertices):
         points.extend(getXY(p,ytl))
         return [points]
                       
-    # l2r, r2l = [], [] # during debug
     xl2r, yl2r, xr2l, yr2l = [], [], [], []
     for line in lines:
         x1, y1, x2, y2 = line[0][0], line[0][1], line[0][2], line[0][3]
@@ -128,28 +122,32 @@ def reduce_lines(lines, vertices):
             y = (y1 + y2) / 2
             if m < 0: # check slope for LHS or RHS
                 if x < xmiddle: # make sure on LHS or RHS
-                    #l2r.append((line[0],m,b,x,y)) # used during debug
                     xl2r.append(x)
                     yl2r.append(y)
             else:
                 if x > xmiddle:
-                    #r2l.append((line[0],m,b,x,y)) # used during debug
                     xr2l.append(x)
                     yr2l.append(y)
-    #for lr in l2r: # used during debug
-    #    printTuple(lr)
-    #    print(lr)
- 
-    #for rl in r2l: # used during debug
-    #    printTuple(rl)
-    #    print(lr)
-
+    
     poly1 = np.polyfit(xl2r,yl2r,1)
     poly2 = np.polyfit(xr2l,yr2l,1)
-    
+        
     lines2 = [getPoint(poly1)]
     lines2.append(getPoint(poly2))
-    print(lines2)
-    #print(lines)
     return lines2
                       
+def process_image(imageIn):
+    ymax = imageIn.shape[0]
+    imageGray = grayscale(imageIn)
+    #cv2.imwrite('test_images/imageGray.jpg',imageGray)
+    imageBlur = gaussian_blur(imageGray, 5)
+    imageEdges = canny(imageBlur, 50,150)
+    #cv2.imwrite('test_images/imageEdges.jpg',imageEdges)
+    xlb, ylb, xlt, ylt, xrt, yrt, xrb, yrb = 130,ymax, 400,325, 525,325, 900,ymax
+    vertices = np.array([[(xlb,ylb),(xlt, ylt), (xrt,yrt), (xrb,yrb)]], dtype=np.int32)
+    imageMasked = region_of_interest(imageEdges,vertices)
+    #cv2.imwrite('test_images/imageMasked.jpg',imageMasked)
+    imageLines = hough_lines(imageMasked, 1, np.pi/180, 10, 10, 5,True, vertices)
+    #cv2.imwrite('test_images/imageLines.jpg',imageLines)
+    imageOut = weighted_img(imageLines, imageIn)
+    return imageOut
